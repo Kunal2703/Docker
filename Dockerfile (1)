@@ -1,0 +1,78 @@
+#Base Image config
+FROM ubuntu:latest
+
+#Updating the packages and installing the prerequisites
+RUN apt-get update
+RUN apt-get install -y wget
+RUN apt-get install -y curl
+RUN apt-get install -y unzip
+RUN apt-get install -y gnupg2
+
+#Installing Git, Putty and default-jdk
+RUN apt-get install -y git
+RUN apt-get install -y putty
+RUN apt-get install -y default-jdk
+
+#Installing Visual Studio Code
+RUN apt-get install software-properties-common apt-transport-https wget -y
+RUN wget -q https://packages.microsoft.com/keys/microsoft.asc -O- | apt-key add -
+RUN add-apt-repository "deb [arch=amd64] https://packages.microsoft.com/repos/vscode stable main"
+RUN apt-get update
+RUN apt-get install -y code
+
+#Apache Tomcat Installation
+RUN wget https://downloads.apache.org/tomcat/tomcat-9/v9.0.73/bin/apache-tomcat-9.0.73.tar.gz
+RUN tar xvzf apache-tomcat-9.0.73.tar.gz
+RUN mv apache-tomcat-9.0.73 /usr/local/tomcat
+
+#SonarQube Installation
+RUN apt-get update
+RUN wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.7.1.62043.zip
+RUN unzip sonarqube-9.7.1.62043.zip
+RUN mv sonarqube-9.7.1.62043 /opt/sonarqube
+RUN chmod +x /opt/sonarqube/bin/linux-x86-64/sonar.sh
+
+#Install Code-Server
+RUN apt-get update
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+RUN mv /usr/bin/code-server /usr/local/bin/code-server
+RUN echo '#!/bin/bash' > /usr/bin/code-server
+RUN echo 'code-server --auth none --disable-telemetry "$@"' >> /usr/bin/code-server
+RUN chmod +x /usr/bin/code-server
+RUN mkdir -p ~/.config/code-server
+RUN echo "bind-addr: 0.0.0.0:9090" > ~/.config/code-server/config.yaml
+
+#Freeing up space
+RUN rm apache-tomcat-9.0.73.tar.gz
+RUN rm sonarqube-9.7.1.62043.zip
+RUN apt-get clean
+RUN rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Installing and configuring Puppet as an extension in code-server
+RUN apt-get update
+RUN curl -O https://apt.puppetlabs.com/puppet6-release-bionic.deb
+RUN dpkg -i puppet6-release-bionic.deb
+RUN apt-get update 
+RUN apt-get install -y puppet-agent
+RUN rm -f puppet6-release-bionic.deb
+RUN code-server --install-extension puppet.puppet-vscode #install puppet as an extension in code server
+
+#Setting Environment Variables and Exposing port: Apache Tomcat
+ENV CATALINA_HOME=/usr/local/tomcat
+ENV PATH $CATALINA_HOME/bin:$PATH
+
+#Exposing Ports
+EXPOSE 9090	8080	9000
+
+#Setting Environment Variables and Exposing Port: Sonarqube
+ENV SONAR_HOME=/opt/sonarqube
+ENV PATH $SONAR_HOME/bin:$PATH
+
+# Set the PATH environment variable to include the PDK binaries
+ENV PATH="${PATH}:/opt/puppetlabs/pdk/bin"
+
+# Start Tomcat and SonarQube when the container starts
+CMD catalina.sh start && \
+    cd /opt/sonarqube/bin/linux-x86-64/ && \
+    ./sonar.sh start && \
+    tail -f /dev/null
